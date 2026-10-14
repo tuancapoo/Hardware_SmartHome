@@ -1,6 +1,6 @@
 """Giả lập AIOT kit bằng cửa sổ hình ảnh – chạy NGUYÊN file yolobit-main.py.
 
-    python gui_sim.py [device] [--interval 3] [--local]     (bỏ device = dùng DEVICE trong yolobit-main.py)
+    python gui_sim.py [device] [--interval N] [--local]     (bỏ device = dùng DEVICE, bỏ --interval = dùng SEND_INTERVAL_MS trong yolobit-main.py)
 
 - Cột trái : kéo thanh trượt để đổi số đo của cảm biến (như cắm cảm biến thật).
 - Giữa     : linh kiện chấp hành phản ứng theo lệnh (quạt quay, đèn sáng, rèm mở).
@@ -320,7 +320,7 @@ class App:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("device", nargs="?", default=None, help="mặc định: DEVICE khai báo trong yolobit-main.py")
-    ap.add_argument("--interval", type=float, default=3, help="chu kỳ gửi cảm biến (giây)")
+    ap.add_argument("--interval", type=float, default=None, help="chu kỳ gửi cảm biến (giây); bỏ trống = dùng SEND_INTERVAL_MS trong yolobit-main.py")
     ap.add_argument("--heartbeat", type=float, default=None, help="thời gian cơ sở tính offline (mặc định = chu kỳ gửi); quá 3 lần không có tin thì coi là offline")
     ap.add_argument("--local", action="store_true", help="dùng broker GIẢ (không cần mạng)")
     ap.add_argument("--selftest", action="store_true", help="tự gửi vài lệnh, in kết quả rồi thoát")

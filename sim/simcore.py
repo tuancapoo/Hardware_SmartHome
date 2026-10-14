@@ -40,16 +40,17 @@ def _consts(src):
     return out
 
 
-def load(device, interval_s, heartbeat_s=None):
-    """Trả về (code, cfg). code là yolobit-main.py, chỉ đổi DEVICE và chu kỳ gửi."""
-    src = open(MAIN, encoding="utf-8").read()
-    sys.path.insert(0, os.path.dirname(HERE))           # để import inject_secrets ở thư mục hardware/
-    from inject_secrets import inject
-    src = inject(src)                                    # điền WiFi/key thật từ secrets.json (nếu có)
+def load(device, interval_s=None, heartbeat_s=None):
+    """Trả về (code, cfg). code là yolobit-main.py, chỉ đổi DEVICE (và chu kỳ gửi nếu interval_s được truyền;
+    interval_s=None thì giữ nguyên SEND_INTERVAL_MS khai báo trong file)."""
+    src = open(MAIN, encoding="utf-8").read()            # WiFi/key đặt thẳng trong yolobit-main.py
     device = device or _consts(src)["DEVICE"]           # không chỉ định thì dùng DEVICE khai báo trong file
     src = re.sub(r'^DEVICE = "[^"]*"', 'DEVICE = "%s"' % device, src, flags=re.M)
-    src = re.sub(r"^SEND_INTERVAL_MS = \d+", "SEND_INTERVAL_MS = %d" % int(interval_s * 1000), src, flags=re.M)
+    if interval_s is not None:
+        src = re.sub(r"^SEND_INTERVAL_MS = \d+", "SEND_INTERVAL_MS = %d" % int(interval_s * 1000), src, flags=re.M)
     c = _consts(src)
+    if interval_s is None:
+        interval_s = c["SEND_INTERVAL_MS"] / 1000.0      # dùng đúng chu kỳ đã đặt trong yolobit-main.py
     dev = c["DEVICES"][device]
     models = {m["_id"]: m for m in c.get("MODELS", [])}
     for comp in dev["components"]:                       # min_start giờ nằm trong MODELS, không còn trong DEVICES
