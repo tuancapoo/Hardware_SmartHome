@@ -1,0 +1,7 @@
+# Bí mật (WiFi, AIO key) và file sinh ra từ chúng: KHÔNG commit
+secrets.json
+dist/
+
+# Python
+__pycache__/
+*.pyc
