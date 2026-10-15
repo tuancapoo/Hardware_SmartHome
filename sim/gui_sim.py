@@ -37,6 +37,8 @@ def classify(c):
         return "sensor", "light", "Ánh sáng (%)", 0, 100, 1
     if d == "pwm_percent":
         return ("fan" if model == "fan-dc" else "led"), None, model, 0, 100, 1
+    if d == "rgb_led_red":                                  # đèn LED RGB: bật = sáng đỏ
+        return "led", None, model, 0, 100, 1
     if d == "servo_angle":
         return "curtain", None, model, 0, 180, 1
     return "other", None, model, 0, 100, 1
@@ -51,6 +53,7 @@ class App:
         self.root, self.cfg, self.code = root, cfg, code
         comps = cfg["components"]
         self.pin_state = {}          # tên chân -> giá trị hiện tại
+        self.rgb_state = {}          # tên chân -> màu (r, g, b) của đèn RGB
         self.fan_angle = 0
         self.counts = {"data": 0, "control": 0, "hb": 0, "recv": 0, "cmd": 0}
         self.last_seen = None        # thời điểm nhận tin upstream gần nhất (server giả dùng để tính online)
@@ -131,7 +134,7 @@ class App:
 
     def add_actuator(self, mid, right, c, kind, model, lo, hi):
         pin = c["pin"]
-        title = {"fan": "Quạt", "led": "Đèn LED", "curtain": "Rèm (servo)"}[kind]
+        title = {"fan": "Quạt", "led": "Đèn LED RGB", "curtain": "Rèm (servo)"}[kind]
         box = tk.Frame(mid, bg=BG)
         box.pack(side="left", padx=6)
         tk.Label(box, text="%s – chân %s" % (title, pin), bg=BG).pack()
@@ -184,6 +187,8 @@ class App:
         kind = ev[0]
         if kind == "pin":
             self.pin_state[ev[1]] = ev[3]
+        elif kind == "rgb":
+            self.rgb_state[ev[1]] = ev[2]
         elif kind == "display":
             self.matrix.set(ev[1])
         elif kind == "publish":
@@ -241,7 +246,7 @@ class App:
                 self.fan_angle = (self.fan_angle + v * 0.5) % 360
                 self.draw_fan(cv, v, a["min_start"])
             elif a["kind"] == "led":
-                self.draw_led(cv, v)
+                self.draw_led(cv, v, self.rgb_state.get(a["pin"]))
             else:
                 self.draw_curtain(cv, v)
         self.root.after(40, self.animate)
@@ -254,7 +259,16 @@ class App:
         note = "  (dưới %d%% có thể không quay)" % min_start if 0 < v < min_start else ""
         cv.create_text(100, 200, text="%d%%%s" % (v, note), font=("Segoe UI", 9, "bold"))
 
-    def draw_led(self, cv, v):
+    def draw_led(self, cv, v, rgb=None):
+        if rgb is not None:                                 # đèn RGB: vẽ đúng màu bo đang bật (tắt = xám)
+            on = any(rgb)
+            if on:
+                cv.create_oval(20, 5, 180, 165, fill=mix((255, 255, 255), rgb, 0.55), outline="", stipple="gray25")
+            cv.create_oval(55, 35, 145, 125, fill=mix((120, 120, 120), rgb, 1.0) if on else "#787878", outline="#555", width=2)
+            cv.create_rectangle(80, 125, 120, 160, fill="#777", outline="#444")
+            label = "SÁNG ĐỎ" if tuple(rgb) == (255, 0, 0) else ("SÁNG" if on else "tắt")
+            cv.create_text(100, 200, text="%d%%  %s" % (v, label), font=("Segoe UI", 9, "bold"))
+            return
         t = v / 100.0
         if v > 0:
             cv.create_oval(20, 5, 180, 165, fill=mix((255, 255, 255), (255, 226, 74), t), outline="", stipple="gray25")

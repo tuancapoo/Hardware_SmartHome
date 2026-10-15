@@ -2,15 +2,7 @@
 
 Code chạy trên bo **Yolo:Bit** (MicroPython) và bộ **giả lập** để thử logic mà không cần bo thật.
 
-```
-hardware/
-├── yolobit-main.py        code nạp vào Yolo:Bit (1 file duy nhất, theo giới hạn của OhStem)
-├── build.py               tạo dist/yolobit-main.py đã điền WiFi + key thật
-├── inject_secrets.py      điền / gỡ bí mật khỏi mã nguồn
-├── secrets.example.json   mẫu bí mật  (sao chép thành secrets.json)
-└── sim/                   giả lập Yolo:Bit (cửa sổ hình ảnh hoặc terminal)
-```
-
+Thay các biến ở secrets.jon vào yolobit-main.py
 ## Bí mật (WiFi, AIO key)
 
 Repo này **công khai**, nên `yolobit-main.py` trên git chỉ chứa giá trị mẫu (`TEN_WIFI`, `aio_xxxxxxxx`).

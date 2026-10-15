@@ -4,7 +4,7 @@ import hw
 
 
 class DHT20:
-    def __init__(self, i2c):
+    def __init__(self, i2c=None):
         pass
 
     def read_dht20(self):

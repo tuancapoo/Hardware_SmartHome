@@ -18,9 +18,12 @@
 # ============================================================
 from yolobit import *
 from mqtt import *                       # chỉ dùng mqtt.connect_wifi
-from umqtt.simple import MQTTClient      # mỗi tài khoản Adafruit một phiên MQTT riêng
+try:                                     # mỗi tài khoản Adafruit một phiên MQTT riêng
+    from umqtt_simple import MQTTClient  # thư viện OhStem (extension MQTT) đặt tên phẳng
+except ImportError:
+    from umqtt.simple import MQTTClient  # phòng khi firmware có sẵn bản đóng gói
 from aiot_dht20 import DHT20
-from machine import Pin, SoftI2C
+from aiot_rgbled import RGBLed          # đèn LED RGB
 import json
 import time
 
@@ -28,9 +31,9 @@ import time
 WIFI_SSID, WIFI_PASS = "TEN_WIFI", "MAT_KHAU"
 UP_USER, UP_KEY = "tuanvip069", "aio_xxxxxxxx"      # KHÔNG đưa key lên git / gửi ảnh
 DOWN_USER, DOWN_KEY = "tuanvip069_downstream", "aio_xxxxxxxx"   # key của tài khoản DOWNSTREAM
-DEVICE = "fan"                    # fan | light | curtain | env  -> chọn bo rồi nạp
-SEND_INTERVAL_MS = 30000          # chu kỳ gửi cảm biến (>= 10 s để khỏi bị Adafruit chặn)
-PING_INTERVAL_MS = 30000          # giữ kết nối cho phiên downstream (không có tin nào gửi đi)
+DEVICE = "AllInOne"                    # fan | light | curtain | env  -> chọn bo rồi nạp
+SEND_INTERVAL_MS = 10000          # chu kỳ gửi cảm biến (>= 10 s để khỏi bị Adafruit chặn)
+PING_INTERVAL_MS = 10000          # giữ kết nối cho phiên downstream (không có tin nào gửi đi)
 
 # ===================== 1b. DANH SÁCH COMPONENT MODEL (cùng định dạng collection `models` trong DB) =====================
 # _id = componentmodelId gửi lên server · name = tên feed (duy nhất) · type: slider | switch | None (cảm biến)
@@ -44,9 +47,9 @@ MODELS = [
      "metric": "light", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
     {"_id": "00000000-0000-4000-8000-000000000204", "name": "fan-dc", "label": "Động cơ quạt mini DC", "kind": "actuator", "type": "slider",
      "metric": "fan_speed", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": 30},
-    {"_id": "00000000-0000-4000-8000-000000000205", "name": "led", "label": "Đèn LED", "kind": "actuator", "type": "switch",
+    {"_id": "00000000-0000-4000-8000-000000000205", "name": "led", "label": "Đèn LED RGB (sáng đỏ)", "kind": "actuator", "type": "switch",
      "metric": "brightness", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
-    {"_id": "00000000-0000-4000-8000-000000000206", "name": "servo-sg90", "label": "Động cơ Servo SG90", "kind": "actuator", "type": "slider",
+    {"_id": "00000000-0000-4000-8000-000000000206", "name": "servo-sg90", "label": "Động cơ Servo SG90 180 độ", "kind": "actuator", "type": "slider",
      "metric": "servo_angle", "unit": "°", "range": {"min": 0, "max": 180}, "min_start": None},
 ]
 
@@ -59,12 +62,12 @@ DEVICES = {
     "fan": {"id": "00000000-0000-4000-8000-000000000401", "buttons": "led", "components": [
         {"model": "dht20-temp", "modelId": "00000000-0000-4000-8000-000000000201", "driver": "dht20_temp"},
         {"model": "dht20-hum", "modelId": "00000000-0000-4000-8000-000000000202", "driver": "dht20_hum"},
-        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "pwm_percent", "pin": "P0"},
+        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "rgb_led_red", "pin": "P0"},
         {"model": "fan-dc", "modelId": "00000000-0000-4000-8000-000000000204", "driver": "pwm_percent", "pin": "P10"},
     ]},
     "light": {"id": "00000000-0000-4000-8000-000000000402", "buttons": "led", "components": [
         {"model": "light", "modelId": "00000000-0000-4000-8000-000000000203", "driver": "analog_percent", "pin": "P1"},
-        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "pwm_percent", "pin": "P0"},
+        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "rgb_led_red", "pin": "P0"},
     ]},
     "curtain": {"id": "00000000-0000-4000-8000-000000000403", "buttons": "servo-sg90", "components": [
         {"model": "light", "modelId": "00000000-0000-4000-8000-000000000203", "driver": "analog_percent", "pin": "P1"},
@@ -74,6 +77,42 @@ DEVICES = {
         {"model": "dht20-temp", "modelId": "00000000-0000-4000-8000-000000000201", "driver": "dht20_temp"},
         {"model": "dht20-hum", "modelId": "00000000-0000-4000-8000-000000000202", "driver": "dht20_hum"},
     ]},
+    
+    "AllInOne": {
+        "id": "b42123bb-1194-497e-9bb9-075f9c500b30",
+        "buttons": "fan-dc",
+        "components": [
+        {
+            "model": "dht20-hum",
+            "modelId": "00000000-0000-4000-8000-000000000202",
+            "driver": "dht20_hum",
+        },
+        {
+            "model": "dht20-temp",
+            "modelId": "00000000-0000-4000-8000-000000000201",
+            "driver": "dht20_temp",
+        },
+        {
+            "model": "light",
+            "modelId": "00000000-0000-4000-8000-000000000203",
+            "driver": "analog_percent",
+            "pin": "P0"
+        },
+        {
+            "model": "led",
+            "modelId": "00000000-0000-4000-8000-000000000205",
+            "driver": "rgb_led_red",
+            "pin": "P2"
+        },
+        {
+            "model": "fan-dc",
+            "modelId": "00000000-0000-4000-8000-000000000204",
+            "driver": "pwm_percent",
+            "pin": "P1"
+        }
+        ]
+    }
+    
 }
 
 PINS = {"P0": pin0, "P1": pin1, "P2": pin2, "P3": pin3, "P4": pin4,
@@ -85,8 +124,8 @@ _dht = None
 def get_dht():
     global _dht
     if _dht is None:
-        _dht = DHT20(SoftI2C(scl=Pin(22), sda=Pin(21)))
-    _dht.read_dht20()
+        _dht = DHT20()                    # thư viện aiot_dht20 tự dùng chân I2C của bo (pin19, pin20)
+    _dht.read_dht20()                     # đo mới trước mỗi lần đọc (như code OhStem: read_dht20() rồi dht20_temperature())
     return _dht
 
 class Dht20Temp:                      # model "dht20-temp"
@@ -101,7 +140,7 @@ class AnalogPercent:                  # model "light" (analog 0-4095 -> 0-100 %)
     def __init__(self, cfg): self.pin = PINS[cfg["pin"]]
     def read(self): return round(self.pin.read_analog() * 100 / 4095)
 
-class PwmPercent:                     # model "fan-dc", "led" (0 = tắt)
+class PwmPercent:                     # model "fan-dc" (0 = tắt)
     def __init__(self, cfg):
         self.pin = PINS[cfg["pin"]]
         self.min_start = cfg.get("min_start") or 0          # lấy từ model
@@ -113,6 +152,20 @@ class PwmPercent:                     # model "fan-dc", "led" (0 = tắt)
         if 0 < v < self.min_start:    # quạt < 30 % có thể không quay (UC02-2 A1)
             print("Cảnh báo: dưới", self.min_start, "% thiết bị có thể không chạy")
         self.pin.write_analog(round(v * 1023 / 100))
+        return v
+
+RGB_LED_COUNT = 4                     # số LED trên module RGB (đổi nếu module của bạn khác)
+
+class RgbLedRed:                      # model "led": đèn LED RGB (aiot_rgbled) – bật = sáng ĐỎ, tắt = tắt
+                                      # cách gọi giống code OhStem App sinh ra: RGBLed(pinX.pin, 4) và show(0, hex_to_rgb('#ff0000'))
+    def __init__(self, cfg):
+        self.rgb = RGBLed(PINS[cfg["pin"]].pin, RGB_LED_COUNT)
+        self.max, self.value = cfg["range"]["max"], 0       # max/value để nút A,B biết tăng tới đâu
+        self.apply(0)
+    def apply(self, v):
+        v = max(0, min(self.max, int(v)))
+        self.value = v
+        self.rgb.show(0, hex_to_rgb('#ff0000') if v > 0 else hex_to_rgb('#000000'))   # 0 = tất cả LED; v > 0 → đỏ, v = 0 → tắt
         return v
 
 class ServoAngle:                     # model "servo-sg90" (0-180 độ)
@@ -129,7 +182,7 @@ class ServoAngle:                     # model "servo-sg90" (0-180 độ)
 # Đăng ký driver. Thêm loại linh kiện mới: viết class ở trên rồi thêm 1 dòng ở đây.
 DRIVERS = {
     "dht20_temp": Dht20Temp, "dht20_hum": Dht20Hum, "analog_percent": AnalogPercent,
-    "pwm_percent": PwmPercent, "servo_angle": ServoAngle,
+    "pwm_percent": PwmPercent, "rgb_led_red": RgbLedRed, "servo_angle": ServoAngle,
 }
 
 # ===================== 4. KẾT NỐI & VÒNG LẶP (không cần sửa) =====================

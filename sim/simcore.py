@@ -55,7 +55,7 @@ def load(device, interval_s=None, heartbeat_s=None):
     models = {m["_id"]: m for m in c.get("MODELS", [])}
     for comp in dev["components"]:                       # min_start giờ nằm trong MODELS, không còn trong DEVICES
         comp.setdefault("min_start", (models.get(comp.get("modelId")) or {}).get("min_start"))
-    acts = [x["model"] for x in dev["components"] if x["driver"] in ("pwm_percent", "servo_angle")]
+    acts = [x["model"] for x in dev["components"] if x["driver"] in ("pwm_percent", "rgb_led_red", "servo_angle")]
     buttons = dev["buttons"] if "buttons" in dev else (acts[0] if acts else None)
     cfg = {"device": device, "up_user": c["UP_USER"], "down_user": c["DOWN_USER"], "down_key": c["DOWN_KEY"],
            "device_id": dev["id"], "components": dev["components"],

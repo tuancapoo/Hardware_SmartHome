@@ -6,6 +6,7 @@ import hw
 class FakePin:
     def __init__(self, name):
         self.name = name
+        self.pin = self                  # bo thật: pinX.pin là machine.Pin; thư viện (vd RGBLed) nhận đối tượng này
         self._v = random.randint(1500, 3000)
 
     def write_analog(self, v):
@@ -30,6 +31,12 @@ class FakePin:
 
 for _i in range(17):
     globals()["pin%d" % _i] = FakePin("P%d" % _i)
+
+
+def hex_to_rgb(h):
+    """'#ff0000' -> (255, 0, 0) (như hàm cùng tên của thư viện yolobit)."""
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
 class _Button:
