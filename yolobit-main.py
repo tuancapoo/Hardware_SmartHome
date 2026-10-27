@@ -4,7 +4,7 @@
 #
 #  UPSTREAM  (bo -> server)  tài khoản UP_USER, tách 3 group:
 #     data.<model>      số đo cảm biến, VÀ giá trị hiện tại của thiết bị chấp hành (gửi định kỳ)
-#                       {"deviceId","componentmodelId","val"}
+#                       {"deviceId","componentmodelId","val","boot"}   boot = mã phiên, đổi mỗi lần khởi động
 #     control.<model>   trạng thái THẬT của thiết bị chấp hành sau khi chạy lệnh / bấm nút
 #                       {"deviceId","componentmodelId","mode":"on|off","val","source":"command|button"}
 #     componentmodelId = _id của loại linh kiện trong collection `models` (xem MODELS bên dưới)
@@ -26,31 +26,28 @@ from aiot_dht20 import DHT20
 from aiot_rgbled import RGBLed          # đèn LED RGB
 import json
 import time
+import random
 
 # ===================== 1. CẤU HÌNH – CHỈ SỬA PHẦN NÀY =====================
 WIFI_SSID, WIFI_PASS = "TEN_WIFI", "MAT_KHAU"
-UP_USER, UP_KEY = "tuanvip069", "aio_xxxxxxxx"      # KHÔNG đưa key lên git / gửi ảnh
-DOWN_USER, DOWN_KEY = "tuanvip069_downstream", "aio_xxxxxxxx"   # key của tài khoản DOWNSTREAM
-DEVICE = "AllInOne"                    # fan | light | curtain | env  -> chọn bo rồi nạp
-SEND_INTERVAL_MS = 10000          # chu kỳ gửi cảm biến (>= 10 s để khỏi bị Adafruit chặn)
+UP_USER, UP_KEY = "aio_xxxxxxxx", "aio_xxxxxxxx"      # KHÔNG đưa key lên git / gửi ảnh
+DOWN_USER, DOWN_KEY = "aio_xxxxxxxx", "aio_xxxxxxxx"   # key của tài khoản DOWNSTREAM
+DEVICE = "quatthongminh"                 # khóa trong DEVICES (mục 2) -> chọn bo rồi nạp
+SEND_INTERVAL_MS = 15000         # chu kỳ gửi cảm biến (>= 10 s để khỏi bị Adafruit chặn)
 PING_INTERVAL_MS = 10000          # giữ kết nối cho phiên downstream (không có tin nào gửi đi)
 
 # ===================== 1b. DANH SÁCH COMPONENT MODEL (cùng định dạng collection `models` trong DB) =====================
 # _id = componentmodelId gửi lên server · name = tên feed (duy nhất) · type: slider | switch | None (cảm biến)
 # range = dải hợp lệ (quạt, đèn, servo bị kẹp trong dải này) · min_start = mức tối thiểu để thiết bị chạy
 MODELS = [
-    {"_id": "00000000-0000-4000-8000-000000000201", "name": "dht20-temp", "label": "DHT20 - Nhiệt độ", "kind": "sensor", "type": None,
-     "metric": "temperature", "unit": "°C", "range": {"min": -40, "max": 80}, "min_start": None},
-    {"_id": "00000000-0000-4000-8000-000000000202", "name": "dht20-hum", "label": "DHT20 - Độ ẩm", "kind": "sensor", "type": None,
-     "metric": "humidity", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
-    {"_id": "00000000-0000-4000-8000-000000000203", "name": "light", "label": "Cảm biến ánh sáng", "kind": "sensor", "type": None,
-     "metric": "light", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
-    {"_id": "00000000-0000-4000-8000-000000000204", "name": "fan-dc", "label": "Động cơ quạt mini DC", "kind": "actuator", "type": "slider",
+    {"_id": "23c6759a-9cbc-41cc-86d9-5b991d9c7315", "name": "dht20-temp", "label": "DHT20 - Nhiệt độ", "kind": "sensor", "type": None,
+     "metric": "temperature", "unit": "*C", "range": {"min": 0, "max": 100}, "min_start": None},
+    {"_id": "6fa2425d-ad42-4248-808b-2219def71eb3", "name": "fan-dc", "label": "Động cơ quạt mini DC", "kind": "actuator", "type": "slider",
      "metric": "fan_speed", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": 30},
-    {"_id": "00000000-0000-4000-8000-000000000205", "name": "led", "label": "Đèn LED RGB (sáng đỏ)", "kind": "actuator", "type": "switch",
+    {"_id": "05cd119e-d729-47e7-bb87-680d08ac564c", "name": "light", "label": "Cảm biến ánh sáng", "kind": "sensor", "type": None,
+     "metric": "light", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
+    {"_id": "567d956b-bf0f-485f-8829-a29c0830622d", "name": "led", "label": "Đèn LED RGB", "kind": "actuator", "type": "switch",
      "metric": "brightness", "unit": "%", "range": {"min": 0, "max": 100}, "min_start": None},
-    {"_id": "00000000-0000-4000-8000-000000000206", "name": "servo-sg90", "label": "Động cơ Servo SG90 180 độ", "kind": "actuator", "type": "slider",
-     "metric": "servo_angle", "unit": "°", "range": {"min": 0, "max": 180}, "min_start": None},
 ]
 
 # ===================== 2. KHAI BÁO DEVICE / COMPONENT =====================
@@ -59,60 +56,12 @@ MODELS = [
 # Một device KHÔNG có 2 component cùng model (DB có index unique device_id + model_id).
 # buttons = model (thiết bị chấp hành) mà nút A/B điều khiển. Bỏ khóa này = actuator đầu tiên; None = tắt nút.
 DEVICES = {
-    "fan": {"id": "00000000-0000-4000-8000-000000000401", "buttons": "led", "components": [
-        {"model": "dht20-temp", "modelId": "00000000-0000-4000-8000-000000000201", "driver": "dht20_temp"},
-        {"model": "dht20-hum", "modelId": "00000000-0000-4000-8000-000000000202", "driver": "dht20_hum"},
-        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "rgb_led_red", "pin": "P0"},
-        {"model": "fan-dc", "modelId": "00000000-0000-4000-8000-000000000204", "driver": "pwm_percent", "pin": "P10"},
+    "quatthongminh": {"id": "ec2f6299-584d-42ba-9f50-58273986e562", "buttons": "led", "components": [
+        {"model": "fan-dc", "modelId": "6fa2425d-ad42-4248-808b-2219def71eb3", "driver": "pwm_percent", "pin": "P10"},
+        {"model": "dht20-temp", "modelId": "23c6759a-9cbc-41cc-86d9-5b991d9c7315", "driver": "dht20_temp"},
+        {"model": "led", "modelId": "567d956b-bf0f-485f-8829-a29c0830622d", "driver": "rgb_led_red", "pin": "P0"},
+        {"model": "light", "modelId": "05cd119e-d729-47e7-bb87-680d08ac564c", "driver": "analog_percent", "pin": "P1"},
     ]},
-    "light": {"id": "00000000-0000-4000-8000-000000000402", "buttons": "led", "components": [
-        {"model": "light", "modelId": "00000000-0000-4000-8000-000000000203", "driver": "analog_percent", "pin": "P1"},
-        {"model": "led", "modelId": "00000000-0000-4000-8000-000000000205", "driver": "rgb_led_red", "pin": "P0"},
-    ]},
-    "curtain": {"id": "00000000-0000-4000-8000-000000000403", "buttons": "servo-sg90", "components": [
-        {"model": "light", "modelId": "00000000-0000-4000-8000-000000000203", "driver": "analog_percent", "pin": "P1"},
-        {"model": "servo-sg90", "modelId": "00000000-0000-4000-8000-000000000206", "driver": "servo_angle", "pin": "P2"},
-    ]},
-    "env": {"id": "00000000-0000-4000-8000-000000000404", "components": [
-        {"model": "dht20-temp", "modelId": "00000000-0000-4000-8000-000000000201", "driver": "dht20_temp"},
-        {"model": "dht20-hum", "modelId": "00000000-0000-4000-8000-000000000202", "driver": "dht20_hum"},
-    ]},
-    
-    "AllInOne": {
-        "id": "b42123bb-1194-497e-9bb9-075f9c500b30",
-        "buttons": "fan-dc",
-        "components": [
-        {
-            "model": "dht20-hum",
-            "modelId": "00000000-0000-4000-8000-000000000202",
-            "driver": "dht20_hum",
-        },
-        {
-            "model": "dht20-temp",
-            "modelId": "00000000-0000-4000-8000-000000000201",
-            "driver": "dht20_temp",
-        },
-        {
-            "model": "light",
-            "modelId": "00000000-0000-4000-8000-000000000203",
-            "driver": "analog_percent",
-            "pin": "P0"
-        },
-        {
-            "model": "led",
-            "modelId": "00000000-0000-4000-8000-000000000205",
-            "driver": "rgb_led_red",
-            "pin": "P2"
-        },
-        {
-            "model": "fan-dc",
-            "modelId": "00000000-0000-4000-8000-000000000204",
-            "driver": "pwm_percent",
-            "pin": "P1"
-        }
-        ]
-    }
-    
 }
 
 PINS = {"P0": pin0, "P1": pin1, "P2": pin2, "P3": pin3, "P4": pin4,
@@ -187,6 +136,7 @@ DRIVERS = {
 
 # ===================== 4. KẾT NỐI & VÒNG LẶP (không cần sửa) =====================
 DEVICE_ID = DEVICES[DEVICE]["id"]
+BOOT_ID = "%08x" % random.getrandbits(32)   # đổi mỗi lần bo khởi động -> server biết để chạy lại tự động
 sensors, actuators = [], {}           # sensors: danh sách; actuators: model -> item
 up, down = None, None                 # 2 phiên MQTT: upstream (gửi) / downstream (nghe lệnh)
 first_actuator = None                # actuator đầu tiên (mặc định của nút A/B nếu device không khai báo "buttons")
@@ -230,6 +180,8 @@ def safe_publish(item, value, source=None, group=None):   # group: "data" (đị
     payload = {"deviceId": DEVICE_ID, "componentmodelId": item["modelId"], "val": value}      # data
     if group == "control":                                                                    # control
         payload["mode"] = "on" if value else "off"
+    else:
+        payload["boot"] = BOOT_ID         # data: kèm mã phiên chạy
     if source:
         payload["source"] = source        # control: "command" (lệnh từ xa) hay "button" (bấm nút tại bo)
     try:
